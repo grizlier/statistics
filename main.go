@@ -1,34 +1,57 @@
 package main
 
 import (
-	"fmt"
-	"os"
 	"encoding/json"
+	"fmt"
+	"math"
+	"os"
+	"sort"
 )
 
 type Student struct {
-	Id 		int 		`json:"Id"`
-	Name 	string	`json:"Name"`
-	Entry int 		`json:"Entry"`
-	Time 	int 		`json:"Time"`
+	Id    int    `json:"Id"`
+	Name  string `json:"Name"`
+	Entry int    `json:"Entry"`
+	Time  int    `json:"Time"`
+}
+
+type Anomaly struct {
+	Student Student
+	Score   float64
 }
 
 var students []Student
 
 func Load() {
-	if file, err := os.Open("students.json"); err != nil {
-		fmt.Println("Ошибка загрузки: ", err)
+	file, err := os.Open("students.json")
+	if err != nil {
+		fmt.Println("Ошибка загрузки:", err)
 		return
-	} else {
-		defer file.Close()
-		if err := json.NewDecoder(file).Decode(&students); err != nil {
-			fmt.Println("Ошибка декодера: ", err)
-		} 
+	}
+	defer file.Close()
+
+	if err := json.NewDecoder(file).Decode(&students); err != nil {
+		fmt.Println("Ошибка декодера:", err)
 	}
 }
 
-func isAnomaly(s Student, ent, time int) bool {
-	return (s.Entry*2 < ent || s.Entry*2 > ent*3) && (s.Time*2 < time || s.Time*2 > time*3)
+func stdDev(values []int, mean float64) float64 {
+	var sum float64
+	for _, v := range values {
+		diff := float64(v) - mean
+		sum += diff * diff
+	}
+	return math.Sqrt(sum / float64(len(values)-1))
+}
+
+func median(values []int) float64 {
+	sort.Ints(values)
+	n := len(values)
+
+	if n%2 == 0 {
+		return float64(values[n/2-1]+values[n/2]) / 2
+	}
+	return float64(values[n/2])
 }
 
 func main() {
@@ -39,26 +62,65 @@ func main() {
 		return
 	}
 
+	var entries []int
+	var times []int
 	var sumEnt, sumTim int
 
 	for _, s := range students {
+		entries = append(entries, s.Entry)
+		times = append(times, s.Time)
 		sumEnt += s.Entry
 		sumTim += s.Time
 	}
 
-	avgEnt := sumEnt / len(students)
-	avgTim := sumTim / len(students)
+	avgEnt := float64(sumEnt) / float64(len(students))
+	avgTim := float64(sumTim) / float64(len(students))
+
+	stdEnt := stdDev(entries, avgEnt)
+	stdTim := stdDev(times, avgTim)
+
+	medEnt := median(entries)
+	medTim := median(times)
 
 	fmt.Println("Средние значения:")
 	fmt.Println("Входы:", avgEnt)
 	fmt.Println("Время:", avgTim)
 
-	fmt.Println("\nАномальные пользователи:")
+	fmt.Println("\nМедиана:")
+	fmt.Println("Входы:", medEnt)
+	fmt.Println("Время:", medTim)
 
+	var anomalies []Anomaly
+
+	if stdEnt == 0 || stdTim == 0 {
+		fmt.Println("Невозможно вычислить аномалии: стандартное отклонение равно 0")
+		return
+	}
+	
 	for _, s := range students {
-		if isAnomaly(s, avgEnt, avgTim) {
-			fmt.Printf("ID: %d, Name: %s, Входы: %d, Время: %d\n", s.Id, s.Name, s.Entry, s.Time)
+		score := math.Abs((float64(s.Entry)-avgEnt)/stdEnt) +
+			math.Abs((float64(s.Time)-avgTim)/stdTim)
+
+		if score > 2 {
+			anomalies = append(anomalies, Anomaly{
+				Student: s,
+				Score:   score,
+			})
 		}
 	}
-}
 
+	sort.Slice(anomalies, func(i, j int) bool {
+		return anomalies[i].Score > anomalies[j].Score
+	})
+
+	percent := float64(len(anomalies)) / float64(len(students)) * 100
+	fmt.Printf("\nПроцент аномальных пользователей: %.2f%%\n", percent)
+
+	fmt.Println("\nАномальные пользователи (по степени отклонения):")
+	for _, a := range anomalies {
+		fmt.Printf("ID: %d, Name: %s, Score: %.2f\n",
+			a.Student.Id,
+			a.Student.Name,
+			a.Score)
+	}
+}
