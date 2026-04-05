@@ -6,6 +6,10 @@ import (
 	"math"
 	"os"
 	"sort"
+	"image/color"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
 )
 
 type Student struct {
@@ -52,6 +56,51 @@ func median(values []int) float64 {
 		return float64(values[n/2-1]+values[n/2]) / 2
 	}
 	return float64(values[n/2])
+}
+
+func buildScatter(students []Student, anomalies []Anomaly) {
+	p := plot.New()
+	p.Title.Text = "Анализ активности пользователей"
+	p.X.Label.Text = "Количество входов"
+	p.Y.Label.Text = "Время"
+
+	anomalyMap := make(map[int]bool)
+	for _, a := range anomalies {
+		anomalyMap[a.Student.Id] = true
+	}
+
+	var normalPoints plotter.XYs
+	var anomalyPoints plotter.XYs
+
+	for _, s := range students {
+		point := plotter.XY{
+			X: float64(s.Entry),
+			Y: float64(s.Time),
+		}
+
+		if anomalyMap[s.Id] {
+			anomalyPoints = append(anomalyPoints, point)
+		} else {
+			normalPoints = append(normalPoints, point)
+		}
+	}
+
+	normScatter, _ := plotter.NewScatter(normalPoints)
+	normScatter.GlyphStyle.Color = color.RGBA{G: 200, A: 255}
+
+	anScatter, _ := plotter.NewScatter(anomalyPoints)
+	anScatter.GlyphStyle.Color = color.RGBA{R: 255, A: 255}
+
+	p.Add(normScatter, anScatter)
+	p.Legend.Add("Норма", normScatter)
+	p.Legend.Add("Аномалии", anScatter)
+
+	err := p.Save(6*vg.Inch, 4*vg.Inch, "scatter.png")
+	if err != nil {
+		fmt.Println("Ошибка сохранения графика:", err)
+	} else {
+		fmt.Println("\nГрафик сохранён как scatter.png")
+	}
 }
 
 func main() {
@@ -123,4 +172,6 @@ func main() {
 			a.Student.Name,
 			a.Score)
 	}
+	
+	buildScatter(students, anomalies)
 }
